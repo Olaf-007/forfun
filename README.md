@@ -14,4 +14,4 @@ Happy sparkling!
 
 ## Crafting
 See the crafting tables below:
-[Crafting tables](https://github.com/Olaf-007/forfun/blob/main/everything.png)
+![Crafting tables](https://github.com/Olaf-007/forfun/blob/main/everything.png)
