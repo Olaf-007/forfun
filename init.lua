@@ -18,6 +18,23 @@ function add(a,b)
   return vector
 end
 
+function mal(a,b) -- b ist Skalar!
+  local vector = {x=0,y=0,z=0}
+  vector.x = a.x *b
+  vector.y = a.y *b
+  vector.z = a.z *b
+  return vector
+end
+
+function isInTable(tbl, item)
+  for key, value in pairs(tbl) do
+      if value == item then
+          return true
+      end
+  end
+  return false
+end
+
 ----------------------
 -- Variables
 ----------------------
@@ -43,6 +60,7 @@ local ITEM_GOLD_INGOT = ""
 local ITEM_COAL = ""
 local ITEM_BONEBLOCK = ""
 local ITEM_BONEMEAL = ""
+local FIRES = {}
 
 -- Default Game loaded
 if GAME == "default" then
@@ -55,6 +73,8 @@ if GAME == "default" then
   ITEM_COAL = "default:coal_lump"
   ITEM_BONEBLOCK = "bones:bones"
   ITEM_BONEMEAL = "bones:bones"
+  FIRES = {"fire:basic_flame","fire:permanent_flame"}
+  
 
   
 -- Mineclone Mod loaded
@@ -68,6 +88,7 @@ elseif GAME == "mineclone" then
   ITEM_COAL = "mcl_core:coal_lump"
   ITEM_BONEBLOCK = "mcl_core:bone_block"
   ITEM_BONEMEAL = "mcl_core:bone_meal"
+  FIRES = {"mcl_fire:fire","mcl_fire:eternal_fire"}
 
 end
 
@@ -159,64 +180,109 @@ minetest.register_globalstep(function(dtime)
         node.name ~= "forfun:lightair_1" and 
         node.name ~= "forfun:lightair" then
         
-        -- Überprüfe alle anliegenden Richtungen
-        for _, dic in ipairs({
-          {vector.new({x=0,y=1,z=0})},
-          {vector.new({x=0,y=-1,z=0})},
-          {vector.new(1,0,0)},
-          {vector.new(-1,0,0)},
-          {vector.new(0,0,1)},
-          {vector.new(0,0,-1)},
-        }) do
-          if minetest.get_node(add(particle_pos,dic[1])).name == "air" then
-            minetest.set_node(add(particle_pos,dic[1]), {name = "forfun:lightair_14"})
+        local directions = {
+          vector.new(0,1,0),
+          vector.new(0,-1,0),
+          vector.new(1,0,0),
+          vector.new(-1,0,0),
+          vector.new(0,0,1),
+          vector.new(0,0,-1),
+        }
+          
+          
+        -- Platziere letztes Licht
+        if cast.type == "light" then
+          -- Überprüfe alle anliegenden Richtungen
+          for _, vec in ipairs(directions) do
+            -- Place a lightnode at the end
+            if minetest.get_node(add(particle_pos,vec)).name == "air" then
+              minetest.set_node(add(particle_pos,vec), {name = "forfun:lightair_14"})
+            end
           end
+          
+        
+          -- Entferne sämtliches Feuer
+        elseif cast.type == "grow" then
+          local all_directions = {}
+          local remove_radius = 50
+          
+          for xc = 0, remove_radius-1, 1 do
+            for yc = 0, remove_radius-1, 1 do
+              for zc = 0, remove_radius-1, 1 do
+                table.insert(all_directions,
+                  add(
+                    add(particle_pos,vector.new(-math.floor(remove_radius/2),
+                                                -math.floor(remove_radius/2),
+                                                -math.floor(remove_radius/2))),
+                    add(
+                      mal(vector.new(1,0,0),xc),
+                      add(
+                        mal(vector.new(0,1,0),yc),
+                        mal(vector.new(0,0,1),zc)
+                      )
+                    )
+                  )
+                )
+              end
+            end
+          end
+              
+          
+          local at_least_one_removed = false
+          
+          for _, vec in ipairs(all_directions) do               
+            
+            if isInTable(FIRES,minetest.get_node(vec).name) then
+              minetest.set_node(vec,{name = "air"})
+              at_least_one_removed = true
+            end
+                
+            
+          end
+          
+          if at_least_one_removed then
+            minetest.sound_play("fire_extinguish", {
+              pos = particle_pos, -- Sound will play at the user's position
+              gain = 1.0, -- Volume
+              max_hear_distance = 10, -- Maximum distance where the sound can be heard
+            })
+          end
+          
         end
           
-        --[[
-          -- If there's a collision
-          -- Do where the collision end
-          for _, dic in ipairs({
-            --{vector.new({x=0,y=1,z=0}),"default:dirt_with_snow"},
-            --{vector.new({x=0,y=-1,z=0}),"default:cactus"},
-            --{vector.new(1,0,0),"default:brick"},
-            --{vector.new(-1,0,0),"default:aspen_wood"},
-            --{vector.new(0,0,1),"default:desert_sandstone_brick"},
-            --{vector.new(0,0,-1),"default:ice"},
-          }) do
-            minetest.remove_node(add(particle_pos,dic[1]))
-            minetest.set_node(add(particle_pos,dic[1]), {name = dic[2]})
-          end
-          minetest.remove_node(particle_pos)
-          minetest.set_node(particle_pos, {name = "default:diamondblock"})
-          
-          
-          -- If free below, fall
-          if minetest.get_node(add(particle_pos,vector.new(0,-1,0))).name == "air" then
-            minetest.spawn_falling_node(particle_pos)
-          end
-          -- Add light
-          if minetest.get_node(add(particle_pos,vector.new(0,1,0))).name == "air" then
-            minetest.add_entity(add(particle_pos,vector.new(0,1,0)), "forfun:flowlight")
-            --minetest.set_node(add(particle_pos,vector.new(0,1,0)), {name = "forfun:lightair_14"})
-          end 
-          --]]
             
         table.remove(active_casts, _) -- Remove this cast from active casts
       elseif cast.time_elapsed >= cast.max_distance then
           -- If the maximum distance is reached without a collision
           table.remove(active_casts, _) -- Remove this cast from active casts
       else
-          -- If there's no collision, and we haven't reached max distance yet
-          minetest.add_particle({
+        
+        -- Cast light
+          if cast.type == "light" then
+            minetest.set_node(particle_pos, {name = "forfun:lightair"})
+            
+            -- If there's no collision, and we haven't reached max distance yet
+            minetest.add_particle({
               pos = particle_pos,
               expirationtime = 0.1,
               size = 2,
               texture = "forfun_particle.png",
               glow = 14,
-          })
-          minetest.set_node(particle_pos, {name = "forfun:lightair"})
-          
+            })
+            
+          elseif cast.type == "grow" then
+                      
+            -- If there's no collision, and we haven't reached max distance yet
+            minetest.add_particle({
+              pos = particle_pos,
+              expirationtime = 0.2,
+              size = 2,
+              texture = "forfun_particle_grow.png",
+              glow = 8,
+            })
+          end
+            
+            
           cast.time_elapsed = cast.time_elapsed + cast.step_distance
       end
   end
@@ -254,7 +320,7 @@ minetest.register_abm({
 -- Register forfun:wand
 minetest.register_tool("forfun:wand", {
   description = "Wand \n(Spark light)",
-  inventory_image = "forfun_wand2.png", -- Regular texture
+  inventory_image = "forfun_wand_turned.png", -- Regular texture
   wield_image = "forfun_wand2.png", -- Custom wield image
   stack_max = 1,
   light_source = 5,
@@ -299,6 +365,7 @@ minetest.register_tool("forfun:wand", {
             z = player_pos.z
         },
         direction = player_dir,
+        type = "light",
         step_distance = 0.5,
         time_elapsed = 0,
         max_distance = 30
@@ -325,9 +392,9 @@ minetest.register_tool("forfun:wand", {
 
 -- Register forfun:bonewand
 minetest.register_tool("forfun:bonewand", {
-  description = "Wand \n(Grow your environment.)",
-  inventory_image = "forfun_wand.png", -- Regular texture
-  wield_image = "forfun_wand2.png", -- Custom wield image
+  description = "Bone Wand \n(Grow your environment.)",
+  inventory_image = "forfun_bonewand_turned.png", -- Regular texture
+  wield_image = "forfun_bonewand.png", -- Custom wield image
   stack_max = 1,
   light_source = 5,
   
@@ -340,6 +407,13 @@ minetest.register_tool("forfun:bonewand", {
     
     player_inventory:remove_item("main", ITEM_BONEMEAL) -- Remove one of the specific item from the player's inventory
       
+    
+    minetest.sound_play("forfun_magic_spell2", {
+      pos = user:get_pos(), -- Sound will play at the user's position
+      gain = 1.0, -- Volume
+      max_hear_distance = 10, -- Maximum distance where the sound can be heard
+    })
+    
     
     if itemstack:get_wear() < 65536 then      -- 65536 for some reason being the maximum amount of usages... 
       -- Add wear to the item
@@ -363,12 +437,13 @@ minetest.register_tool("forfun:bonewand", {
             z = player_pos.z
         },
         direction = player_dir,
+        type = "grow",
         step_distance = 0.5,
         time_elapsed = 0,
         max_distance = 30
     })
   else
-    Print("You need a coal dust to use this wand")
+    Print("You need bone meal to use this wand.")
   
   end
     
