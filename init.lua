@@ -18,13 +18,34 @@ function add(a,b)
   return vector
 end
 
+function mal(a,b) -- b ist Skalar!
+  local vector = {x=0,y=0,z=0}
+  vector.x = a.x *b
+  vector.y = a.y *b
+  vector.z = a.z *b
+  return vector
+end
+
+function isInTable(tbl, item)
+  for key, value in pairs(tbl) do
+      if value == item then
+          return true
+      end
+  end
+  return false
+end
+
 ----------------------
 -- Variables
 ----------------------
 
+local GAME = "none"
 
-local compatibility = true
-
+if minetest.get_modpath("default") then
+  GAME = "default"
+elseif minetest.get_modpath("mcl_core") then
+  GAME = "mineclone"
+end
 
 ----------------------
 -- Blocks
@@ -37,10 +58,12 @@ local ITEM_STICK = ""
 local ITEM_LAPIZ = ""
 local ITEM_GOLD_INGOT = ""
 local ITEM_COAL = ""
-
+local ITEM_BONEBLOCK = ""
+local ITEM_BONEMEAL = ""
+local FIRES = {}
 
 -- Default Game loaded
-if minetest.get_modpath("default") then
+if GAME == "default" then
   BLOCK_DIRT = "default:dirt"
   BLOCK_STICK = "default:stick"
   ITEM_CHRYSTAL = "default:mese_crystal"
@@ -48,10 +71,14 @@ if minetest.get_modpath("default") then
   ITEM_STICK = "default:stick"
   ITEM_GOLD_INGOT = "default:gold_ingot"
   ITEM_COAL = "default:coal_lump"
+  ITEM_BONEBLOCK = "bones:bones"
+  ITEM_BONEMEAL = "bones:bones"
+  FIRES = {"fire:basic_flame","fire:permanent_flame"}
+  
 
   
 -- Mineclone Mod loaded
-elseif minetest.get_modpath("mcl_core") then
+elseif GAME == "mineclone" then
   BLOCK_DIRT = "mcl_core:dirt"
   BLOCK_STICK = "mcl_core:stick"
   ITEM_CHRYSTAL = "mcl_core:emerald"
@@ -59,10 +86,10 @@ elseif minetest.get_modpath("mcl_core") then
   ITEM_STICK = "mcl_core:stick"
   ITEM_GOLD_INGOT = "mcl_core:gold_ingot"
   ITEM_COAL = "mcl_core:coal_lump"
+  ITEM_BONEBLOCK = "mcl_core:bone_block"
+  ITEM_BONEMEAL = "mcl_core:bone_meal"
+  FIRES = {"mcl_fire:fire","mcl_fire:eternal_fire"}
 
-else 
-  compatibility = false
-  
 end
 
 
@@ -98,6 +125,27 @@ minetest.register_node("forfun:lightair", {
   end,
 })
 
+local light_levels = 14  -- Starting from 14, which is very bright
+
+for i=1, light_levels do
+    minetest.register_node("forfun:lightair_" .. i, {
+        description = "Illuminated Air Level " .. i,
+        drawtype = "airlike",
+        walkable = false,
+        pointable = false,
+        diggable = false,
+        buildable_to = true,
+        drop = "",
+        sunlight_propagates = true,
+        paramtype = "light",
+        light_source = i,
+        groups = {not_in_creative_inventory=1, lightair=1},
+    })
+end
+
+----------------------
+-- Global Step
+----------------------
 
 -- Register global table to hold casting data
 local active_casts = {}
@@ -132,88 +180,122 @@ minetest.register_globalstep(function(dtime)
         node.name ~= "forfun:lightair_1" and 
         node.name ~= "forfun:lightair" then
         
-        -- Überprüfe alle anliegenden Richtungen
-        for _, dic in ipairs({
-          {vector.new({x=0,y=1,z=0})},
-          {vector.new({x=0,y=-1,z=0})},
-          {vector.new(1,0,0)},
-          {vector.new(-1,0,0)},
-          {vector.new(0,0,1)},
-          {vector.new(0,0,-1)},
-        }) do
-          if minetest.get_node(add(particle_pos,dic[1])).name == "air" then
-            minetest.set_node(add(particle_pos,dic[1]), {name = "forfun:lightair_14"})
+        local directions = {
+          vector.new(0,1,0),
+          vector.new(0,-1,0),
+          vector.new(1,0,0),
+          vector.new(-1,0,0),
+          vector.new(0,0,1),
+          vector.new(0,0,-1),
+        }
+          
+          
+        -- Platziere letztes Licht
+        if cast.type == "light" then
+          -- Überprüfe alle anliegenden Richtungen
+          for _, vec in ipairs(directions) do
+            -- Place a lightnode at the end
+            if minetest.get_node(add(particle_pos,vec)).name == "air" then
+              minetest.set_node(add(particle_pos,vec), {name = "forfun:lightair_14"})
+            end
           end
+          
+        
+          -- Entferne sämtliches Feuer
+        elseif cast.type == "grow" then
+          local all_directions = {}
+          local remove_radius = 50
+          
+          for xc = 0, remove_radius-1, 1 do
+            for yc = 0, remove_radius-1, 1 do
+              for zc = 0, remove_radius-1, 1 do
+                table.insert(all_directions,
+                  add(
+                    add(particle_pos,vector.new(-math.floor(remove_radius/2),
+                                                -math.floor(remove_radius/2),
+                                                -math.floor(remove_radius/2))),
+                    add(
+                      mal(vector.new(1,0,0),xc),
+                      add(
+                        mal(vector.new(0,1,0),yc),
+                        mal(vector.new(0,0,1),zc)
+                      )
+                    )
+                  )
+                )
+              end
+            end
+          end
+              
+          
+          local at_least_one_removed = false
+          
+          for _, vec in ipairs(all_directions) do               
+            
+            if isInTable(FIRES,minetest.get_node(vec).name) then
+              minetest.set_node(vec,{name = "air"})
+              at_least_one_removed = true
+            end
+                
+            
+          end
+          
+          if at_least_one_removed then
+            minetest.sound_play("fire_extinguish", {
+              pos = particle_pos, -- Sound will play at the user's position
+              gain = 1.0, -- Volume
+              max_hear_distance = 10, -- Maximum distance where the sound can be heard
+            })
+          end
+          
         end
           
-        --[[
-          -- If there's a collision
-          -- Do where the collision end
-          for _, dic in ipairs({
-            --{vector.new({x=0,y=1,z=0}),"default:dirt_with_snow"},
-            --{vector.new({x=0,y=-1,z=0}),"default:cactus"},
-            --{vector.new(1,0,0),"default:brick"},
-            --{vector.new(-1,0,0),"default:aspen_wood"},
-            --{vector.new(0,0,1),"default:desert_sandstone_brick"},
-            --{vector.new(0,0,-1),"default:ice"},
-          }) do
-            minetest.remove_node(add(particle_pos,dic[1]))
-            minetest.set_node(add(particle_pos,dic[1]), {name = dic[2]})
-          end
-          minetest.remove_node(particle_pos)
-          minetest.set_node(particle_pos, {name = "default:diamondblock"})
-          
-          
-          -- If free below, fall
-          if minetest.get_node(add(particle_pos,vector.new(0,-1,0))).name == "air" then
-            minetest.spawn_falling_node(particle_pos)
-          end
-          -- Add light
-          if minetest.get_node(add(particle_pos,vector.new(0,1,0))).name == "air" then
-            minetest.add_entity(add(particle_pos,vector.new(0,1,0)), "forfun:flowlight")
-            --minetest.set_node(add(particle_pos,vector.new(0,1,0)), {name = "forfun:lightair_14"})
-          end 
-          --]]
             
         table.remove(active_casts, _) -- Remove this cast from active casts
       elseif cast.time_elapsed >= cast.max_distance then
           -- If the maximum distance is reached without a collision
           table.remove(active_casts, _) -- Remove this cast from active casts
       else
-          -- If there's no collision, and we haven't reached max distance yet
-          minetest.add_particle({
+        
+        -- Cast light
+          if cast.type == "light" then
+            minetest.set_node(particle_pos, {name = "forfun:lightair"})
+            
+            -- If there's no collision, and we haven't reached max distance yet
+            minetest.add_particle({
               pos = particle_pos,
               expirationtime = 0.1,
               size = 2,
               texture = "forfun_particle.png",
               glow = 14,
-          })
-          minetest.set_node(particle_pos, {name = "forfun:lightair"})
-          
+            })
+            
+          elseif cast.type == "grow" then
+                      
+            -- If there's no collision, and we haven't reached max distance yet
+            minetest.add_particle({
+              pos = particle_pos,
+              expirationtime = 0.2,
+              size = 2,
+              texture = "forfun_particle_grow.png",
+              glow = 8,
+            })
+          end
+            
+            
           cast.time_elapsed = cast.time_elapsed + cast.step_distance
       end
   end
 end)
 
 
-local light_levels = 14  -- Starting from 14, which is very bright
+----------------------------------------------
+----------------------------------------------
 
-for i=1, light_levels do
-    minetest.register_node("forfun:lightair_" .. i, {
-        description = "Illuminated Air Level " .. i,
-        drawtype = "airlike",
-        walkable = false,
-        pointable = false,
-        diggable = false,
-        buildable_to = true,
-        drop = "",
-        sunlight_propagates = true,
-        paramtype = "light",
-        light_source = i,
-        groups = {not_in_creative_inventory=1, lightair=1},
-    })
-end
 
+----------------------
+-- Effects
+----------------------
 
 minetest.register_abm({
   nodenames = {"group:lightair"},  -- Targeting all nodes in the 'lightair' group
@@ -235,11 +317,10 @@ minetest.register_abm({
   end,
 })
 
-
--- Define the custom tool item
+-- Register forfun:wand
 minetest.register_tool("forfun:wand", {
   description = "Wand \n(Spark light)",
-  inventory_image = "forfun_wand2.png", -- Regular texture
+  inventory_image = "forfun_wand_turned.png", -- Regular texture
   wield_image = "forfun_wand2.png", -- Custom wield image
   stack_max = 1,
   light_source = 5,
@@ -250,9 +331,8 @@ minetest.register_tool("forfun:wand", {
 
   -- Check if the player has the specific item in their inventory
   if player_inventory:contains_item("main", "forfun:coaldust") then
-    -- Remove one of the specific item from the player's inventory
-    player_inventory:remove_item("main", "forfun:coaldust")
     
+    player_inventory:remove_item("main", "forfun:coaldust") -- Remove one of the specific item from the player's inventory
     
     -- Play Sound
     -- Emit a sound when the wand is used
@@ -263,29 +343,11 @@ minetest.register_tool("forfun:wand", {
     })
       
     
-    
-    -- Retrieve the current usage count from the item's metadata
-    local meta = itemstack:get_meta()
-    local usage_count = meta:get_string("usage_count")
-
-    -- If usage_count is nil or empty, initialize it to 0
-    if not usage_count or usage_count == "" then
-        usage_count = 0
-    else
-        usage_count = tonumber(usage_count)
-    end
-        
-    -- Check if the item has been used less than 20 times
-    if usage_count < 200 then
-      -- Increment the usage count
-      usage_count = usage_count + 1
-      itemstack:get_meta():set_string("usage_count", tostring(usage_count))
-      
+    if itemstack:get_wear() < 65536 then      -- 65536 for some reason being the maximum amount of usages... 
       -- Add wear to the item
-      itemstack:add_wear(327)
+      itemstack:add_wear(656) -- ca. 100 usages
       
-
-    -- If the usage count has reached 5, print a message to the user and remove the wand
+    -- Remove Item when used
     else
       itemstack:take_item(1)  -- Removes the wand from the inventory
     end
@@ -303,6 +365,7 @@ minetest.register_tool("forfun:wand", {
             z = player_pos.z
         },
         direction = player_dir,
+        type = "light",
         step_distance = 0.5,
         time_elapsed = 0,
         max_distance = 30
@@ -316,7 +379,7 @@ minetest.register_tool("forfun:wand", {
 
     -- Return the modified itemstack
     return itemstack
-end,
+  end,
 
   tool_capabilities = {
     max_drop_level = 0,
@@ -327,7 +390,81 @@ end,
 })
 
 
--- Register Wand depending on the dependencies
+-- Register forfun:bonewand
+minetest.register_tool("forfun:bonewand", {
+  description = "Bone Wand \n(Grow your environment.)",
+  inventory_image = "forfun_bonewand_turned.png", -- Regular texture
+  wield_image = "forfun_bonewand.png", -- Custom wield image
+  stack_max = 1,
+  light_source = 5,
+  
+  on_use = function(itemstack, user, pointed_thing)
+    
+    local player_inventory = user:get_inventory()
+
+  -- Check if the player has the specific item in their inventory
+  if player_inventory:contains_item("main", ITEM_BONEMEAL) then
+    
+    player_inventory:remove_item("main", ITEM_BONEMEAL) -- Remove one of the specific item from the player's inventory
+      
+    
+    minetest.sound_play("forfun_magic_spell2", {
+      pos = user:get_pos(), -- Sound will play at the user's position
+      gain = 1.0, -- Volume
+      max_hear_distance = 10, -- Maximum distance where the sound can be heard
+    })
+    
+    
+    if itemstack:get_wear() < 65536 then      -- 65536 for some reason being the maximum amount of usages... 
+      -- Add wear to the item
+      itemstack:add_wear(656) -- ca. 100 usages
+      
+    -- Remove Item when used
+    else
+      itemstack:take_item(1)  -- Removes the wand from the inventory
+    end
+    
+    ------- Magic Spell Start
+      
+    local player_pos = user:get_pos()
+    local player_dir = user:get_look_dir()
+
+    -- Store the casting data for the globalstep callback
+    table.insert(active_casts, {
+        start = {
+            x = player_pos.x,
+            y = player_pos.y + 1.4, -- roughly eye level
+            z = player_pos.z
+        },
+        direction = player_dir,
+        type = "grow",
+        step_distance = 0.5,
+        time_elapsed = 0,
+        max_distance = 30
+    })
+  else
+    Print("You need bone meal to use this wand.")
+  
+  end
+    
+    ------- Magic Spell End
+
+    -- Return the modified itemstack
+    return itemstack
+  end,
+
+  tool_capabilities = {
+    max_drop_level = 0,
+    groupcaps = {
+      hand = {times = {[1] = 0.0}, uses = 0, maxlevel = 1},
+    }, 
+  },
+})
+
+local i_count = 0
+local function OnFrame()
+  Print("Every frame:"..i_count)
+end
 
 
 
@@ -357,74 +494,98 @@ minetest.register_craftitem("forfun:coaldust", {
 ---------------------
 
 
-if compatibility then
+if GAME ~= "none" then
 --------------------- RegisterStart
 
 
+  if true then -- Crafting Recipes: forfun:magicstick
 
--- Register Magic Stick recipe
+    -- Left
+    minetest.register_craft({
+      output = "forfun:magicstick",
+      recipe = {
+        {"", "", ITEM_LAPIZ},
+        {"", ITEM_STICK, ""},
+        {ITEM_LAPIZ, "", ""},
+      }
+    })
 
--- Left
-minetest.register_craft({
-  output = "forfun:magicstick",
-  recipe = {
-    {"", "", ITEM_LAPIZ},
-    {"", ITEM_STICK, ""},
-    {ITEM_LAPIZ, "", ""},
-  }
-})
+    -- Right
+    minetest.register_craft({
+      output = "forfun:magicstick",
+      recipe = {
+        {ITEM_LAPIZ, "", ""},
+          {"",ITEM_STICK, ""},
+          {"", "", ITEM_LAPIZ},
+      }
+    })
 
--- Right
-minetest.register_craft({
-  output = "forfun:magicstick",
-  recipe = {
-    {ITEM_LAPIZ, "", ""},
-      {"",ITEM_STICK, ""},
-      {"", "", ITEM_LAPIZ},
-  }
-})
+  end
 
+  if true then -- Crafting Recipes: forfun:wand
 
+    -- Right
+    minetest.register_craft({
+      output = "forfun:wand", -- Assuming you have a magic wand defined
+      recipe = {
+          {"forfun:magicstick", "", ""},
+          {"", "forfun:magicstick", ""},
+          {"", "", ITEM_GOLD_INGOT},
+      }
+    })
 
--- Register Wand recipe
+    -- Left
+    minetest.register_craft({
+      output = "forfun:wand",
+      recipe = {
+        {"", "", "forfun:magicstick"},
+        {"", "forfun:magicstick", ""},
+        {ITEM_GOLD_INGOT, "", ""},
+      }
+    })
 
--- Right
-minetest.register_craft({
-  output = "forfun:wand", -- Assuming you have a magic wand defined
-  recipe = {
-      {"forfun:magicstick", "", ""},
-      {"", "forfun:magicstick", ""},
-      {"", "", ITEM_GOLD_INGOT},
-  }
-})
-
--- Left
-minetest.register_craft({
-  output = "forfun:wand",
-  recipe = {
-    {"", "", "forfun:magicstick"},
-    {"", "forfun:magicstick", ""},
-    {ITEM_GOLD_INGOT, "", ""},
-  }
-})
+  end
   
-  
+  if true then -- Crafting Recipes: forfun:coaldust
+    if GAME == "default" then
+      minetest.register_craft({
+        type = "shapeless",
+        output = "forfun:coaldust 12",
+        recipe = { ITEM_COAL, ITEM_COAL }
+      })
 
--- Coaldust TWO
-minetest.register_craft({
-  type = "shapeless",
-  output = "forfun:coaldust 9",
-  recipe = { ITEM_COAL, ITEM_COAL }
-})
--- Coaldust ONE (for Mineclone)
-minetest.register_craft({
-  type = "shapeless",
-  output = "forfun:coaldust 16",
-  recipe = { ITEM_COAL, ITEM_COAL }
-})
-  
-  
-  
+      -- Coaldust ONE (for Mineclone)
+    else
+      minetest.register_craft({
+        type = "shapeless",
+        output = "forfun:coaldust 6",
+        recipe = { ITEM_COAL }
+      })
+    end
+  end
+    
+  if true then -- Crafting Recipes: forfun:bonewand 
+    -- Right
+    minetest.register_craft({
+      output = "forfun:bonewand", -- Assuming you have a magic wand defined
+      recipe = {
+          {"forfun:magicstick", "", ""},
+          {"", "forfun:magicstick", ""},
+          {"", "", ITEM_BONEBLOCK},
+      }
+    })
+
+    -- Left
+    minetest.register_craft({
+      output = "forfun:bonewand",
+      recipe = {
+        {"", "", "forfun:magicstick"},
+        {"", "forfun:magicstick", ""},
+        {ITEM_BONEBLOCK, "", ""},
+      }
+    })
+  end
+    
   
 --------------------- RegisterEnd
 end
