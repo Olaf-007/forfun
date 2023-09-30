@@ -393,7 +393,7 @@ minetest.register_tool("forfun:wand", {
 -- Register forfun:bonewand
 minetest.register_tool("forfun:bonewand", {
   description = "Bone Wand \n(extinguish fires)",
-  inventory_image = "forfun_bonewand_turned.png", -- Regular texture
+  inventory_image = "forfun_bonewand_turned.png", --  _animation.png^[verticalframe:5:0", -- Regular texture
   wield_image = "forfun_bonewand.png", -- Custom wield image
   stack_max = 1,
   light_source = 5,
