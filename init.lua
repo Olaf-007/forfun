@@ -87,7 +87,7 @@ elseif GAME == "mineclone" then
   ITEM_GOLD_INGOT = "mcl_core:gold_ingot"
   ITEM_COAL = "mcl_core:coal_lump"
   ITEM_BONEBLOCK = "mcl_core:bone_block"
-  ITEM_BONEMEAL = "mcl_core:bone_meal"
+  ITEM_BONEMEAL = "mcl_bone_meal:bone_meal"
   FIRES = {"mcl_fire:fire","mcl_fire:eternal_fire"}
 
 end
@@ -204,7 +204,7 @@ minetest.register_globalstep(function(dtime)
           -- Entferne sämtliches Feuer
         elseif cast.type == "grow" then
           local all_directions = {}
-          local remove_radius = 50
+          local remove_radius = 8
           
           for xc = 0, remove_radius-1, 1 do
             for yc = 0, remove_radius-1, 1 do
@@ -392,7 +392,7 @@ minetest.register_tool("forfun:wand", {
 
 -- Register forfun:bonewand
 minetest.register_tool("forfun:bonewand", {
-  description = "Bone Wand \n(Grow your environment.)",
+  description = "Bone Wand \n(extinguish fires)",
   inventory_image = "forfun_bonewand_turned.png", -- Regular texture
   wield_image = "forfun_bonewand.png", -- Custom wield image
   stack_max = 1,
@@ -417,7 +417,7 @@ minetest.register_tool("forfun:bonewand", {
     
     if itemstack:get_wear() < 65536 then      -- 65536 for some reason being the maximum amount of usages... 
       -- Add wear to the item
-      itemstack:add_wear(656) -- ca. 100 usages
+      itemstack:add_wear(1820) -- ca. 36 usages
       
     -- Remove Item when used
     else
